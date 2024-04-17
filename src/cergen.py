@@ -20,6 +20,22 @@ class gergen:
 
 
 ######################################################################
+#--------------------------- TYPE ALIASES ---------------------------#
+######################################################################
+
+Atomic = Union[int, float]
+ListOrAtomic = Union[list, Atomic]
+GergenOrAtomic = Union['gergen', Atomic]
+
+isAtomic = lambda obj: isinstance(obj, (int, float))
+isList = lambda obj: isinstance(obj, list)
+isTuple = lambda obj: isinstance(obj, tuple)
+isGergen = lambda obj: isinstance(obj, gergen)
+isListOrAtomic = lambda obj: isList(obj) or isAtomic(obj)
+isGergenOrAtomic = lambda obj: isGergen(obj) or isAtomic(obj)
+
+
+######################################################################
 #-------------------------- HELPER CLASSES --------------------------#
 ######################################################################
 class TupleIndexedList:
@@ -27,10 +43,10 @@ class TupleIndexedList:
         self.tuple_indexed_list = tuple_indexed_list
 
     def __getitem__(self, index):
-        if type(index) == int:
+        if isinstance(index, int):
             return self.tuple_indexed_list[index]
         
-        if type(index) == tuple:
+        if isTuple(index):
             val_to_return = self.tuple_indexed_list
 
             while len(index) > 0:
@@ -40,11 +56,11 @@ class TupleIndexedList:
             return val_to_return
 
     def __setitem__(self, index, value):
-        if type(index) == int:
+        if isinstance(index, int):
             self.tuple_indexed_list[index] = value
             return
         
-        if type(index) == tuple:
+        if isTuple(index):
             val_to_return = self.tuple_indexed_list
 
             while len(index) > 1:
@@ -141,10 +157,9 @@ def create_nested_list_with_fill(boyut: tuple, fill) -> list:
     return nest_list(unnested_list, boyut)
 
 
-def get_transpose_of_nested_list(nested_list: list | int | float) -> list | int | float:
+def get_transpose_of_nested_list(nested_list: ListOrAtomic) -> ListOrAtomic:
     if (
-        type(nested_list) == int or
-        type(nested_list) == float
+        isAtomic(nested_list)
     ):
         return nested_list
     
@@ -195,13 +210,13 @@ def get_transpose_of_nested_list(nested_list: list | int | float) -> list | int 
 
 
 def get_dimensions_of_nested_list(nested_list: list) -> tuple:
-    if type(nested_list) == int or type(nested_list) == float:
+    if isAtomic(nested_list):
         return ()
 
     boyut_list = []
     current_nested_list = nested_list
 
-    while type(current_nested_list[0]) != int and type(current_nested_list[0]) != float:
+    while isinstance(current_nested_list[0], int) and isinstance(current_nested_list[0], float):
         boyut_list.append(len(current_nested_list))
         current_nested_list = current_nested_list[0]
 
@@ -212,8 +227,7 @@ def get_dimensions_of_nested_list(nested_list: list) -> tuple:
 
 def unnest_list(nested_list: list) -> list:
     if (
-        type(nested_list) == int or
-        type(nested_list) == float
+        isAtomic(nested_list)
     ):
         return [nested_list]
     
@@ -229,7 +243,7 @@ def nest_list(unnested_list: list, boyut: tuple, total_element_count: int = -1) 
     if len(boyut) == 1 and boyut[0] == len(unnested_list):
         return unnested_list
 
-    if isinstance(unnested_list, (int, float)):
+    if isAtomic(unnested_list):
         return unnested_list
 
     if total_element_count == -1:
@@ -251,8 +265,7 @@ def nest_list(unnested_list: list, boyut: tuple, total_element_count: int = -1) 
 
 def map_nested_list(nested_list: list, map_fn) -> list:
     if (
-        type(nested_list) == int or
-        type(nested_list) == float
+        isAtomic(nested_list)
     ):
         return map_fn(nested_list)
     
@@ -311,7 +324,7 @@ or scalars) to perform the operation, ultimately returning a new gergen object t
 
 
 class Addition(Operation):
-    def adder(self, left: Union[list, int, float], right: Union[list, int, float]) -> Union[list, int, float]:
+    def adder(self, left: ListOrAtomic, right: ListOrAtomic) -> ListOrAtomic:
         """
         For gergen-to-gergen addition, it iterates over corresponding el- ements from both instances, adding them together. If one
         operand is a scalar, this value is added to every element within the gergen instance. The method performs a dimensionality
@@ -321,8 +334,8 @@ class Addition(Operation):
         new gergen object.
         """
         if (
-            isinstance(left, (list)) and
-            isinstance(right, (list))
+            isList(left) and
+            isList(right)
         ):
             """
             both gergos (represented by lists)
@@ -336,15 +349,15 @@ class Addition(Operation):
             ])
         
         if (
-            isinstance(left, (int, float)) and
-            isinstance(right, (int, float))
+            isAtomic(left) and
+            isAtomic(right)
         ):
             """
             both scalars
             """
             return left + right
         
-        if isinstance(left, (int, float)):
+        if isAtomic(left):
             """
             left is scalar
             """
@@ -352,7 +365,7 @@ class Addition(Operation):
                 self.adder(left, el) for el in right
             ])
 
-        if isinstance(right, (int, float)):
+        if isAtomic(right):
             """
             right is scalar
             """
@@ -362,7 +375,7 @@ class Addition(Operation):
         
         raise TypeError('Operands should be of type int, float, or gergen')
 
-    def ileri(self, *operands: Union['gergen', int, float]) -> 'gergen':
+    def ileri(self, *operands: GergenOrAtomic) -> 'gergen':
         """
         Defines the forward pass of the addition operation.
         Adds the given operands element-wise.
@@ -373,7 +386,7 @@ class Addition(Operation):
         Returns:
             The result of the addition operation.
         """
-        if not all(isinstance(operand, (int, float, gergen)) for operand in operands):
+        if not all(isGergenOrAtomic(operand) for operand in operands):
             raise TypeError('Operands should be of type int, float, or gergen')
 
         if len(operands) < 2:
@@ -381,15 +394,15 @@ class Addition(Operation):
         
         if len(operands) == 2:
             if (
-                isinstance(operands[0], (gergen)) and
-                isinstance(operands[1], (gergen))
+                isGergen(operands[0]) and
+                isGergen(operands[1])
             ):
                 if operands[0].boyut() != operands[1].boyut() and operands[0].boyut() != () and operands[1].boyut() != ():
                     raise ValueError('Operands should have the same shape')
 
             #! WE WILL NOT USE THE GERGEN OBJECT IN adder FUNCTION. INSTEAD, WE WILL PASS THE listeye() OF THE GERGEN OBJECT.
             neutralised_operands = [
-                operand if isinstance(operand, (int, float)) else operand.listeye()
+                operand if isAtomic(operand) else operand.listeye()
                     for operand in operands
             ]
 
@@ -404,7 +417,7 @@ class Addition(Operation):
 
 
 class Subtraction(Operation):
-    def subtractor(self, left: Union[list, int, float], right: Union[list, int, float]) -> Union[list, int, float]:
+    def subtractor(self, left: ListOrAtomic, right: ListOrAtomic) -> ListOrAtomic:
         """
         This method en- ables element-wise subtraction, either between two gergen instances or between a gergen and a scalar (int/float).
         For gergen-to-gergen subtraction, corresponding elements from each instance are subtracted. When operating with a scalar, the
@@ -413,8 +426,8 @@ class Subtraction(Operation):
         raised. The outcome of the subtraction is should be returned in a new gergen ob- ject.
         """
         if (
-            isinstance(left, (list)) and
-            isinstance(right, (list))
+            isList(left) and
+            isList(right)
         ):
             """
             both gergos (represented by lists)
@@ -428,15 +441,15 @@ class Subtraction(Operation):
             ])
         
         if (
-            isinstance(left, (int, float)) and
-            isinstance(right, (int, float))
+            isAtomic(left) and
+            isAtomic(right)
         ):
             """
             both scalars
             """
             return left - right
         
-        if isinstance(left, (int, float)):
+        if isAtomic(left):
             """
             left is scalar
             """
@@ -444,7 +457,7 @@ class Subtraction(Operation):
                 self.subtractor(left, el) for el in right
             ])
 
-        if isinstance(right, (int, float)):
+        if isAtomic(right):
             """
             right is scalar
             """
@@ -454,7 +467,7 @@ class Subtraction(Operation):
         
         raise TypeError('Operands should be of type int, float, or gergen')
 
-    def ileri(self, *operands: Union['gergen', int, float]) -> 'gergen':
+    def ileri(self, *operands: GergenOrAtomic) -> 'gergen':
         """
         Defines the forward pass of the addition operation.
         Adds the given operands element-wise.
@@ -465,7 +478,7 @@ class Subtraction(Operation):
         Returns:
             The result of the addition operation.
         """
-        if not all(isinstance(operand, (int, float, gergen)) for operand in operands):
+        if not all(isGergenOrAtomic(operand) for operand in operands):
             raise TypeError('Operands should be of type int, float, or gergen')
 
         if len(operands) < 2:
@@ -473,15 +486,15 @@ class Subtraction(Operation):
         
         if len(operands) == 2:
             if (
-                isinstance(operands[0], (gergen)) and
-                isinstance(operands[1], (gergen))
+                isGergen(operands[0]) and
+                isGergen(operands[1])
             ):
                 if operands[0].boyut() != operands[1].boyut() and operands[0].boyut() != () and operands[1].boyut() != ():
                     raise ValueError('Operands should have the same shape')
 
             #! WE WILL NOT USE THE GERGEN OBJECT IN adder FUNCTION. INSTEAD, WE WILL PASS THE listeye() OF THE GERGEN OBJECT.
             neutralised_operands = [
-                operand if isinstance(operand, (int, float)) else operand.listeye()
+                operand if isAtomic(operand) else operand.listeye()
                     for operand in operands
             ]
 
@@ -505,8 +518,8 @@ class Multiplication(Operation):
         incompatible type is provided for other, a TypeError or ValueError is raised.
         """
         if (
-            isinstance(left, (list)) and
-            isinstance(right, (list))
+            isList(left) and
+            isList(right)
         ):
             """
             both gergos (represented by lists)
@@ -520,15 +533,15 @@ class Multiplication(Operation):
             ])
         
         if (
-            isinstance(left, (int, float)) and
-            isinstance(right, (int, float))
+            isAtomic(left) and
+            isAtomic(right)
         ):
             """
             both scalars
             """
             return left * right
         
-        if isinstance(left, (int, float)):
+        if isAtomic(left):
             """
             left is scalar
             """
@@ -536,7 +549,7 @@ class Multiplication(Operation):
                 self.multiplier(left, el) for el in right
             ])
 
-        if isinstance(right, (int, float)):
+        if isAtomic(right):
             """
             right is scalar
             """
@@ -546,7 +559,7 @@ class Multiplication(Operation):
         
         raise TypeError('Operands should be of type int, float, or gergen')
 
-    def ileri(self, *operands: Union['gergen', int, float]) -> 'gergen':
+    def ileri(self, *operands: GergenOrAtomic) -> 'gergen':
         """
         Defines the forward pass of the addition operation.
         Adds the given operands element-wise.
@@ -557,7 +570,7 @@ class Multiplication(Operation):
         Returns:
             The result of the addition operation.
         """
-        if not all(isinstance(operand, (int, float, gergen)) for operand in operands):
+        if not all(isGergenOrAtomic(operand) for operand in operands):
             raise TypeError('Operands should be of type int, float, or gergen')
 
         if len(operands) < 2:
@@ -565,15 +578,15 @@ class Multiplication(Operation):
         
         if len(operands) == 2:
             if (
-                isinstance(operands[0], (gergen)) and
-                isinstance(operands[1], (gergen))
+                isGergen(operands[0]) and
+                isGergen(operands[1])
             ):
                 if operands[0].boyut() != operands[1].boyut() and operands[0].boyut() != () and operands[1].boyut() != ():
                     raise ValueError('Operands should have the same shape')
 
             #! WE WILL NOT USE THE GERGEN OBJECT IN adder FUNCTION. INSTEAD, WE WILL PASS THE listeye() OF THE GERGEN OBJECT.
             neutralised_operands = [
-                operand if isinstance(operand, (int, float)) else operand.listeye()
+                operand if isAtomic(operand) else operand.listeye()
                     for operand in operands
             ]
 
@@ -600,8 +613,8 @@ class Division(Operation):
             raise ZeroDivisionError('Division by zero is not allowed')
 
         if (
-            isinstance(left, (list)) and
-            isinstance(right, (list))
+            isList(left) and
+            isList(right)
         ):
             """
             both gergos (represented by lists)
@@ -615,15 +628,15 @@ class Division(Operation):
             ])
         
         if (
-            isinstance(left, (int, float)) and
-            isinstance(right, (int, float))
+            isAtomic(left) and
+            isAtomic(right)
         ):
             """
             both scalars
             """
             return left / right
         
-        if isinstance(left, (int, float)):
+        if isAtomic(left):
             """
             left is scalar
             """
@@ -631,7 +644,7 @@ class Division(Operation):
                 self.divisor(left, el) for el in right
             ])
 
-        if isinstance(right, (int, float)):
+        if isAtomic(right):
             """
             right is scalar
             """
@@ -641,7 +654,7 @@ class Division(Operation):
         
         raise TypeError('Operands should be of type int, float, or gergen')
 
-    def ileri(self, *operands: Union['gergen', int, float]) -> 'gergen':
+    def ileri(self, *operands: GergenOrAtomic) -> 'gergen':
         """
         Defines the forward pass of the addition operation.
         Adds the given operands element-wise.
@@ -652,7 +665,7 @@ class Division(Operation):
         Returns:
             The result of the addition operation.
         """
-        if not all(isinstance(operand, (int, float, gergen)) for operand in operands):
+        if not all(isGergenOrAtomic(operand) for operand in operands):
             raise TypeError('Operands should be of type int, float, or gergen')
 
         if len(operands) < 2:
@@ -660,15 +673,15 @@ class Division(Operation):
         
         if len(operands) == 2:
             if (
-                isinstance(operands[0], (gergen)) and
-                isinstance(operands[1], (gergen))
+                isGergen(operands[0]) and
+                isGergen(operands[1])
             ):
                 if operands[0].boyut() != operands[1].boyut() and operands[0].boyut() != () and operands[1].boyut() != ():
                     raise ValueError('Operands should have the same shape')
 
             #! WE WILL NOT USE THE GERGEN OBJECT IN adder FUNCTION. INSTEAD, WE WILL PASS THE listeye() OF THE GERGEN OBJECT.
             neutralised_operands = [
-                operand if isinstance(operand, (int, float)) else operand.listeye()
+                operand if isAtomic(operand) else operand.listeye()
                     for operand in operands
             ]
 
@@ -737,7 +750,7 @@ class gergen:
         if self.__veri is None:
             string_to_print += "Boş gergen"
 
-        elif type(self.__veri) == int or type(self.__veri) == float:
+        elif isAtomic(self.__veri):
             # If the tensor is a scalar, we can directly return the string representation of the scalar.
             string_to_print += "0 boyutlu skaler gergen:\n" + str(self.__veri)
 
@@ -752,7 +765,7 @@ class gergen:
         return string_to_print + "\n"
 
 
-    def __mul__(self, other: Union['gergen', int, float]) -> 'gergen':
+    def __mul__(self, other: GergenOrAtomic) -> 'gergen':
         """
         Multiplication operation for gergen objects.
         Called when a gergen object is multiplied by another, using the '*' operator.
@@ -760,7 +773,7 @@ class gergen:
         """
         return self.__multiplier(self, other)
 
-    def __truediv__(self, other: Union['gergen', int, float]) -> 'gergen':
+    def __truediv__(self, other: GergenOrAtomic) -> 'gergen':
         """
         Division operation for gergen objects.
         Called when a gergen object is divided by another, using the '/' operator.
@@ -769,7 +782,7 @@ class gergen:
         return self.__divider(self, other)
 
 
-    def __add__(self, other: Union['gergen', int, float]) -> 'gergen':
+    def __add__(self, other: GergenOrAtomic) -> 'gergen':
         """
         Defines the addition operation for gergen objects.
         Called when a gergen object is added to another, using the '+' operator.
@@ -777,7 +790,7 @@ class gergen:
         """
         return self.__adder(self, other)
 
-    def __sub__(self, other: Union['gergen', int, float]) -> 'gergen':
+    def __sub__(self, other: GergenOrAtomic) -> 'gergen':
         """
         Subtraction operation for gergen objects.
         Called when a gergen object is subtracted from another, using the '-' operator.
@@ -785,7 +798,7 @@ class gergen:
         """
         return self.__subtractor(self, other)
 
-    def __radd__(self, other: Union['gergen', int, float]) -> 'gergen':
+    def __radd__(self, other: GergenOrAtomic) -> 'gergen':
         """
         Defines the addition operation for gergen objects when the left operand is a scalar.
         Called when a scalar is added to a gergen object, using the '+' operator.
@@ -793,7 +806,7 @@ class gergen:
         """
         return self.__adder(other, self)
     
-    def __rsub__(self, other: Union['gergen', int, float]) -> 'gergen':
+    def __rsub__(self, other: GergenOrAtomic) -> 'gergen':
         """
         Subtraction operation for gergen objects when the left operand is a scalar.
         Called when a scalar is subtracted from a gergen object, using the '-' operator.
@@ -801,7 +814,7 @@ class gergen:
         """
         return self.__subtractor(other, self)
     
-    def __rmul__(self, other: Union['gergen', int, float]) -> 'gergen':
+    def __rmul__(self, other: GergenOrAtomic) -> 'gergen':
         """
         Multiplication operation for gergen objects when the left operand is a scalar.
         Called when a scalar is multiplied by a gergen object, using the '*' operator.
@@ -809,7 +822,7 @@ class gergen:
         """
         return self.__multiplier(other, self)
     
-    def __rtruediv__(self, other: Union['gergen', int, float]) -> 'gergen':
+    def __rtruediv__(self, other: GergenOrAtomic) -> 'gergen':
         """
         Division operation for gergen objects when the left operand is a scalar.
         Called when a scalar is divided by a gergen object, using the '/' operator.
@@ -819,7 +832,7 @@ class gergen:
 
     def uzunluk(self):
     # Returns the total number of elements in the gergen
-        if type(self.__veri) == int or type(self.__veri) == float:
+        if isAtomic(self.__veri):
             return 1
         
         return len(self.duzlestir())
@@ -890,7 +903,7 @@ class gergen:
 
     def boyutlandir(self, yeni_boyut):
     #Reshapes the gergen object to a new shape 'yeni_boyut', which is specified as a tuple.
-        if not isinstance(yeni_boyut, tuple):
+        if not isTuple(yeni_boyut):
             raise ValueError('yeni_boyut should be a tuple')
         
         current_uzunluk = self.uzunluk()
@@ -928,7 +941,7 @@ class gergen:
             error is raised, reflecting the necessity for compatible dimensions in matrix multiplication.
         """
 
-        if not isinstance(other, gergen):
+        if not isGergen(other):
             raise TypeError('Operands should be of type gergen')
         
         if len(self.__boyut) != len(other.__boyut):
@@ -966,7 +979,7 @@ class gergen:
         see: https://odtuclass2023s.metu.edu.tr/mod/forum/discuss.php?d=757
         """
             
-        if not isinstance(other, gergen):
+        if not isGergen(other):
             raise TypeError('Operands should be of type gergen')
 
         if len(self.__boyut) != 1 or len(other.__boyut) != 1:
