@@ -804,7 +804,7 @@ class ReLU(Operation):
             gergen(
                 map_nested_list(self.operands[0].listeye(), lambda el: 1 if el > 0 else 0)
             )
-        ).devrik())
+        ))
 
         self.propagate_geri()
 
@@ -846,8 +846,8 @@ class ForwardPass(Operation):
             grad_input
         )
 
-        grad_x = grad_input.ic_carpim(W).devrik()
-        grad_W = x.ic_carpim(grad_input)
+        grad_x = W.devrik().ic_carpim(grad_input)
+        grad_W = grad_input.ic_carpim(x.devrik())
         grad_b = grad_input
 
         x.set_turev(grad_x)
@@ -907,7 +907,7 @@ class CrossEntropyLoss(Operation):
 
         y_pred, y_true = self.operands
 
-        self.operands[0].set_turev((y_pred - y_true).devrik())
+        self.operands[0].set_turev((y_pred - y_true)) #.devrik())
 
         self.propagate_geri()
 
