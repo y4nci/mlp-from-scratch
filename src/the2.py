@@ -240,6 +240,24 @@ def map_nested_list(nested_list: list, map_fn) -> list:
     ]
 
 
+def diagonalize_gergen(gergen_instance: 'gergen') -> 'gergen':
+    if len(gergen_instance.boyut()) != 2:
+        raise ValueError('Gergen should be 2D')
+    
+    # gergen_instance is either a row vector [[x1, x2, x3 ... xn]] or a column vector [[x1], [x2], [x3] ... [xn]]
+
+    if gergen_instance.boyut()[0] == 1:
+        return gergen([
+            [gergen_instance.duzlestir()[i] if i == j else 0 for i in range(gergen_instance.boyut()[1])]
+                for j in range(gergen_instance.boyut()[1])
+        ])
+    
+    return gergen([
+        [gergen_instance.duzlestir()[i] if i == j else 0 for i in range(gergen_instance.boyut()[0])]
+            for j in range(gergen_instance.boyut()[0])
+    ])
+
+
 ######################################################################
 #------------------------ OPERATION CLASSES -------------------------#
 ######################################################################
@@ -277,7 +295,7 @@ class Operation:
         self.outputs = self.ileri(*operands)
 
         if isGergen(self.outputs):
-            self.outputs.operands = operands
+            self.outputs.set_operation(self)
 
         return self.outputs
     
@@ -314,6 +332,10 @@ class Operation:
             NotImplementedError: If not overridden in a subclass.
         """
         raise NotImplementedError
+    
+    def propagate_geri(self):
+        for operand in self.operands:
+            if (operand.get_operation() is not None): operand.get_operation().geri(operand.get_turev())
 
 
 class Addition(Operation):
@@ -420,7 +442,12 @@ class Addition(Operation):
             The gradient of the loss with respect to the input of this operation.
         """
 
-        return grad_input * self.operands[0].turev_al() + grad_input * self.operands[1].turev_al()
+        self.operands[0].set_turev(grad_input)
+        self.operands[1].set_turev(grad_input)
+
+        self.propagate_geri()
+
+        return grad_input
 
 
 class Subtraction(Operation):
@@ -525,7 +552,12 @@ class Subtraction(Operation):
             The gradient of the loss with respect to the input of this operation.
         """
 
-        return grad_input * self.operands[0].turev_al() - grad_input * self.operands[1].turev_al()
+        self.operands[0].set_turev(grad_input)
+        self.operands[1].set_turev(-grad_input)
+
+        self.propagate_geri()
+
+        return grad_input
     
 
 class Multiplication(Operation):
@@ -630,7 +662,12 @@ class Multiplication(Operation):
             The gradient of the loss with respect to the input of this operation.
         """
 
-        return grad_input * self.operands[0].turev_al() * self.operands[1] + grad_input * self.operands[1].turev_al() * self.operands[0]
+        self.operands[0].set_turev(grad_input * self.operands[1])
+        self.operands[1].set_turev(grad_input * self.operands[0])
+
+        self.propagate_geri()
+
+        return grad_input
             
 
 class Division(Operation):
@@ -738,9 +775,89 @@ class Division(Operation):
             The gradient of the loss with respect to the input of this operation.
         """
 
-        return grad_input * self.operands[0].turev_al() / self.operands[1] \
-            - grad_input * self.operands[1].turev_al() * self.operands[0] / self.operands[1] ** 2
+        self.operands[0].set_turev(grad_input / self.operands[1])
+        self.operands[1].set_turev(-grad_input * self.operands[0] / self.operands[1] ** 2)
+
+        self.propagate_geri()
+
+        return grad_input
+
+
+class ReLU(Operation):
+    def ileri(self, operand: gergen) -> 'gergen':
+        if (len(operand.boyut()) == 1):
+            return gergen([
+                max(0, el)
+                    for el in operand.listeye()
+            ])
+        
+        return gergen([
+            [max(0, el) for el in row]
+                for row in operand.listeye()
+        ])
     
+    def geri(self, grad_input):
+        """
+        Defines the backward pass of the ReLU operation.
+        """
+        self.operands[0].set_turev(diagonalize_gergen(grad_input).ic_carpim(
+            gergen(
+                map_nested_list(self.operands[0].listeye(), lambda el: 1 if el > 0 else 0)
+            )
+        ).devrik())
+
+        self.propagate_geri()
+
+        return grad_input
+    
+
+class ForwardPass(Operation):
+    def ileri(self, *operands: gergen) -> gergen:
+        """
+        The forward pass of a layer, which computes the output of the layer given the input x, weights W, and biases b.
+        """
+        x, W, b = operands
+        
+        # element-wise add W.ic_carpim(x) and b
+
+        left = W.ic_carpim(x).listeye()
+        right = b.listeye()
+
+        # they are guaranteed to have the same shape and to be 2D
+
+        return gergen(
+            [
+                [ left[i][j] + right[i][j] for j in range(len(left[i])) ]
+                    for i in range(len(left))
+            ]
+        )
+
+    def geri(self, grad_input):
+        """
+        Defines the backward pass of the forward pass operation.
+        """
+
+        x, W, b = self.operands
+
+        print(
+            "x:", x,
+            "W:", W,
+            "b:", b,
+            grad_input
+        )
+
+        grad_x = grad_input.ic_carpim(W).devrik()
+        grad_W = x.ic_carpim(grad_input)
+        grad_b = grad_input
+
+        x.set_turev(grad_x)
+        W.set_turev(grad_W)
+        b.set_turev(grad_b)
+
+        self.propagate_geri()
+
+        return grad_input
+
 
 class Softmax(Operation):
     def ileri(self, *operands: list[gergen]) -> 'gergen':
@@ -762,72 +879,11 @@ class Softmax(Operation):
         """
         Defines the backward pass of the softmax operation.
         """
-        if (len(self.outputs.boyut()) == 1):
-            return grad_input * [
-                el * (1 - el)
-                    for el in self.outputs.listeye()
-            ] * self.outputs.turev_al()
-        
-        return grad_input * [
-            [el * (1 - el) for el in row]
-                for row in self.outputs.listeye()
-        ] * self.outputs.turev_al()
+        self.operands[0].set_turev(grad_input)
 
+        self.propagate_geri()
 
-class ReLU(Operation):
-    def ileri(self, operand: gergen) -> 'gergen':
-        if (len(operand.boyut()) == 1):
-            return gergen([
-                max(0, el)
-                    for el in operand.listeye()
-            ])
-        
-        return gergen([
-            [max(0, el) for el in row]
-                for row in operand.listeye()
-        ])
-    
-    def geri(self, grad_input):
-        """
-        Defines the backward pass of the ReLU operation.
-        """
-
-        if (len(self.outputs.boyut()) == 1):
-            return grad_input * [
-                1 if el > 0 else 0
-                    for el in self.outputs.listeye()
-            ] * self.outputs.turev_al()
-        
-        return grad_input * [
-            [1 if el > 0 else 0 for el in row]
-                for row in self.outputs.listeye()
-        ] * self.outputs.turev_al()
-    
-
-class ForwardPass(Operation):
-    def ileri(self, *operands: gergen) -> gergen:
-        """
-        The forward pass of a layer, which computes the output of the layer given the input x, weights W, and biases b.
-        """
-        x, W, b = operands
-        
-        adder = Addition()
-
-        return adder(
-            W.ic_carpim(x),
-            b
-        )
-    
-    def geri(self, grad_input):
-        """
-        Defines the backward pass of the forward pass operation.
-        """
-
-        return (
-            grad_input * self.operands[0].turev_al() * self.operands[1] +
-            grad_input * self.operands[1].turev_al() * self.operands[0] +
-            grad_input * self.operands[2].turev_al()
-        )
+        return grad_input
 
     
 class CrossEntropyLoss(Operation):
@@ -836,23 +892,26 @@ class CrossEntropyLoss(Operation):
 
         y_pred_log = y_pred.log()
 
-        return (y_pred_log.ic_carpim(y_true.devrik()) ) / (- len(y_pred.listeye()))
+        divider = - len(y_pred.listeye())
+
+        divided = y_pred_log.ic_carpim(y_true.devrik()).listeye()
+
+        return gergen(
+            map_nested_list(divided, lambda el: el / divider)
+        )
         
     def geri(self, grad_input):
         """
         Defines the backward pass of the cross entropy loss operation.
         """
 
-        if (len(self.outputs.boyut()) == 1):
-            return grad_input * [
-                -1 / el
-                    for el in self.outputs.listeye()
-            ] * self.outputs.turev_al()
-        
-        return grad_input * [
-            [-1 / el for el in row]
-                for row in self.outputs.listeye()
-        ] * self.outputs.turev_al()
+        y_pred, y_true = self.operands
+
+        self.operands[0].set_turev((y_pred - y_true).devrik())
+
+        self.propagate_geri()
+
+        return grad_input
     
 
 ######################################################################
@@ -1019,6 +1078,10 @@ class gergen:
         The operation is element-wise.
         """
         return other.__truediv__(self)
+    
+    def set_veri(self, veri: list):
+        self.__veri = veri
+        self.__unnested_veri = None
 
     def uzunluk(self):
     # Returns the total number of elements in the gergen
@@ -1026,7 +1089,6 @@ class gergen:
             return 1
         
         return len(self.duzlestir())
-        
 
     def boyut(self):
     # Returns the shape of the gergen
@@ -1349,15 +1411,10 @@ class gergen:
         """
         Calculates the derivative of the gergen object using the chain rule.
         """
-        print(self.__operation)
-
-        if self.__turev is not None:
-            return self.__turev
-        
         if self.__operation is None:
             return gergen(create_nested_list_with_fill(self.boyut(), 1))
         
-        self.__turev = self.__operation.geri(self.__operation(self))
+        self.__operation.geri(1)
 
         return self.__turev
     
@@ -1539,7 +1596,7 @@ class MLP:
 
     _predicted_y_values: gergen = None
 
-    _loss_operation: CrossEntropyLoss
+    _loss_operation: CrossEntropyLoss = None
 
     def __init__(self, input_size: int, hidden_size: int, output_size: int):
         """
@@ -1589,7 +1646,9 @@ class MLP:
         
         self._loss_operation = CrossEntropyLoss()
 
-        return self._loss_operation(self._predicted_y_values, correct_y_values)
+        res =  self._loss_operation(self._predicted_y_values, correct_y_values)
+
+        return res
     
 
 def egit(
@@ -1609,8 +1668,6 @@ def egit(
 
             target_expected_gergen = gergen(target_expected_list).boyutlandir((mlp._output_size, 1))
 
-            print(target_expected_gergen.boyut(), target_expected_gergen, flush=True)
-
             print("chp1", flush=True)
 
             mlp.ileri(sample)
@@ -1619,22 +1676,24 @@ def egit(
 
             loss = mlp.calculate_loss(target_expected_gergen)
 
-            print(loss, flush=True)
-
-            loss_grad = loss.turev_al()
-            W1_grad = mlp.hidden_layer.get_weights().turev_al()
-            b1_grad = mlp.hidden_layer.get_bias().turev_al()
-            W2_grad = mlp.output_layer.get_weights().turev_al()
-            b2_grad = mlp.output_layer.get_bias().turev_al()
+            loss.turev_al()
 
             print("chp3", flush=True)
 
-            print(W1_grad, b1_grad, W2_grad, b2_grad, flush=True)
+            loss_wrt_W1 = mlp.hidden_layer.get_weights().get_turev()
+            loss_wrt_b1 = mlp.hidden_layer.get_bias().get_turev()
+            loss_wrt_W2 = mlp.output_layer.get_weights().get_turev()
+            loss_wrt_b2 = mlp.output_layer.get_bias().get_turev()
 
-            loss_wrt_W1 = loss_grad / W1_grad
-            loss_wrt_b1 = loss_grad / b1_grad
-            loss_wrt_W2 = loss_grad / W2_grad
-            loss_wrt_b2 = loss_grad / b2_grad
+            print("chp4", flush=True)
+
+            print(
+                loss_wrt_W1,
+                loss_wrt_b1,
+                loss_wrt_W2,
+                loss_wrt_b2,
+                flush=True
+            )
 
             updated_W1 = mlp.hidden_layer.get_weights() - learning_rate * loss_wrt_W1
             updated_b1 = mlp.hidden_layer.get_bias() - learning_rate * loss_wrt_b1
