@@ -916,7 +916,7 @@ class CrossEntropyLoss(Operation):
 
         divider = - len(y_pred.listeye())
 
-        divided = y_pred_log.ic_carpim(y_true.devrik()).listeye()
+        divided = gergen(y_pred_log.duzlestir()).ic_carpim(gergen(y_true.duzlestir())).listeye()
 
         return gergen(
             map_nested_list(divided, lambda el: el / divider)
@@ -1745,7 +1745,9 @@ def egit(
             mlp.output_layer.get_weights().subtract_gradient(learning_rate)
             mlp.output_layer.get_bias().subtract_gradient(learning_rate)
 
-            print("UPADTE")
+            print(loss)
+
+            """ print("UPADTE")
             print(
                 "input", mlp.hidden_layer.get_input(),
                 "weights_1", mlp.hidden_layer.get_weights(),
@@ -1755,10 +1757,10 @@ def egit(
                 "res", ForwardPass()(mlp.output_layer.get_input(), mlp.output_layer.get_weights(), mlp.output_layer.get_bias()),
                 "output", mlp.output_layer.get_output(),
                 flush=True
-            )
+            ) """
 
 
-def load_data() -> tuple[list[int], list[int]]:
+def load_data() -> tuple[MNISTDataType, MNISTDataType]:
     """
     Loads the test and training data from the files "test_data.csv" and "train_data.csv", respectively, that are located in the
     parent directory of the current working directory. The data is loaded from the files and returned as a tuple of lists. The data
@@ -1803,28 +1805,9 @@ def prepare_data(data: MNISTDataType) -> tuple[gergen, gergen]:
     """
 
     labels = [sample[0] for sample in data]
-    images = [sample[1] for sample in data]
+    images = [list(map(lambda val: (val / 256),  sample[1])) for sample in data]
 
     labels_gergen = gergen(labels)
     images_gergen = gergen(images)
 
     return labels_gergen, images_gergen
-
-
-def main():
-    raw_train_data, raw_test_data = load_data()
-    train_labels, train_images = prepare_data(raw_train_data)
-
-    mlp = MLP(784, 28, 10)
-
-    egit(
-        mlp,
-        train_images,
-        train_labels,
-        epochs=10,
-        learning_rate=0.01
-    )
-
-
-if __name__ == '__main__':
-    main()
