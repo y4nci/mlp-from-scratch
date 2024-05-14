@@ -10,10 +10,12 @@ import random
 class gergen:
     pass
 
+
 ######################################################################
 #--------------------------- TYPE ALIASES ---------------------------#
 ######################################################################
 
+DistributionType = Literal['uniform', 'normal']
 ActivationType = Literal['softmax', 'relu']
 
 MNISTSampleType = tuple[int, list[int]]
@@ -90,16 +92,18 @@ def get_total_element_count_from_nested_list(nested_list: list) -> int:
     return stringified_nested_list.count(',') + 1
 
 
-def create_nested_list(boyut: tuple, aralik_list: list, use_integer: bool) -> list:
+def create_nested_list(boyut: tuple, aralik_list: list, use_integer: bool, dagilim: DistributionType = 'uniform') -> list:
+    random_function = random.randint if use_integer else (random.uniform if dagilim == 'uniform' else random.gauss)
+
     if len(boyut) == 0:
-        return random.randint(*aralik_list) if use_integer else random.uniform(*aralik_list)
+        return random_function(*aralik_list)
 
     total_length = 1
 
     for el in boyut:
         total_length *= el
 
-    unnested_list = [random.randint(*aralik_list) if use_integer else random.uniform(*aralik_list)
+    unnested_list = [random_function(*aralik_list)
         for _ in range(total_length)
     ]
     
@@ -121,6 +125,25 @@ def create_nested_list_with_fill(boyut: tuple, fill) -> list:
     unnested_list = [fill for _ in range(total_length)]
     
     return nest_list(unnested_list, boyut)
+
+
+def create_nested_list_using_xavier(boyut: tuple, dagilim: DistributionType) -> list:
+    aralik_list = []
+
+    if dagilim == 'uniform':
+        aralik_list = [
+            -math.sqrt(6 / (boyut[0] + boyut[1])),
+            math.sqrt(6 / (boyut[0] + boyut[1]))
+        ]
+    elif dagilim == 'normal':
+        aralik_list = [
+            0,
+            math.sqrt(2 / (boyut[0] + boyut[1]))
+        ]
+    else:
+        raise ValueError('Invalid distribution type')
+
+    return create_nested_list(boyut, aralik_list, False)
 
 
 def get_transpose_of_nested_list(nested_list: ListOrAtomic) -> ListOrAtomic:
@@ -839,13 +862,6 @@ class ForwardPass(Operation):
 
         x, W, b = self.operands
 
-        print(
-            "x:", x,
-            "W:", W,
-            "b:", b,
-            grad_input
-        )
-
         grad_x = W.devrik().ic_carpim(grad_input)
         grad_W = grad_input.ic_carpim(x.devrik())
         grad_b = grad_input
@@ -863,17 +879,23 @@ class Softmax(Operation):
     def ileri(self, *operands: list[gergen]) -> 'gergen':
         operand = operands[0]
 
-        if (len(operand.boyut()) == 1):
+        try:
+            if (len(operand.boyut()) == 1):
+                return gergen([
+                    math.exp(el) / sum([math.exp(otherEl) for otherEl in operand.listeye()])
+                        for el in operand.listeye()
+                ])
+                    
             return gergen([
-                math.exp(el) / sum([math.exp(otherEl) for otherEl in operand.listeye()])
-                    for el in operand.listeye()
+                [math.exp(el) / sum([math.exp(otherEl) for otherEl in operand.duzlestir()])
+                    for el in row
+                ] for row in operand.listeye()
             ])
-                
-        return gergen([
-            [math.exp(el) / sum([math.exp(otherEl) for otherEl in operand.duzlestir()])
-                for el in row
-            ] for row in operand.listeye()
-        ])
+        
+        except OverflowError:
+            print(operand)
+
+            exit(31)
     
     def geri(self, grad_input):
         """
@@ -1079,6 +1101,16 @@ class gergen:
         """
         return other.__truediv__(self)
     
+    def __neg__(self) -> 'gergen':
+        """
+        Negation operation for gergen objects.
+        Called when the negation operator '-' is used on a gergen object.
+        The operation is element-wise.
+        """
+        return self.set_veri(
+            map_nested_list(self.__veri, lambda x: -x)
+        )
+
     def set_veri(self, veri: list):
         self.__veri = veri
         self.__unnested_veri = None
@@ -1424,6 +1456,29 @@ class gergen:
         """
         self.__turev = None
 
+    def subtract_gradient(self, learning_rate: float) -> None:
+        """
+        Subtracts the calculated gradient from the current gergen object.
+        """
+        if self.__turev is None:
+            raise ValueError('Gradient is not calculated yet')
+
+        flat_self = self.duzlestir()
+        flat_gradient = self.__turev.duzlestir()
+        flat_subtracted = [
+            flat_self[i] - (flat_gradient[i] * learning_rate)
+                for i in range(len(flat_self))
+        ]
+
+        reshaped_subtracted = nest_list(flat_subtracted, self.boyut())
+
+        self.set_veri(
+            reshaped_subtracted
+        )
+
+        self.reset_turev()
+
+
 
 ######################################################################
 #-------------------- FUNDAMENTAL FUNCTIONALITIES -------------------#
@@ -1436,7 +1491,7 @@ def cekirdek(sayi: int) -> None:
     random.seed(sayi)
 
 
-def rastgele_dogal(boyut: tuple, aralik: tuple = (0, 100), dagilim='uniform') -> gergen:
+def rastgele_dogal(boyut: tuple, aralik: tuple = (0, 100), dagilim: DistributionType = "uniform") -> gergen:
     """
     Generates a gergen of specified dimensions with random integer values. The boyut parameter is a tuple specifying the dimensions of
     the gergen to be generated. The aralik parameter is an optional tuple (min, max) specifying the range of random values, with a 
@@ -1459,7 +1514,7 @@ def rastgele_dogal(boyut: tuple, aralik: tuple = (0, 100), dagilim='uniform') ->
     return gergen(create_nested_list(boyut, aralik_list, True))
 
 
-def rastgele_gercek(boyut: tuple, aralik: tuple = (0.0,1.0), dagilim = None) -> gergen:
+def rastgele_gercek(boyut: tuple, aralik: tuple = (0.0,1.0), dagilim: DistributionType = None) -> gergen:
     """
     Generates a gergen of specified dimensions with random floating-point values. The boyut parameter is a tuple specifying the dimensions
     of the gergen to be generated. The aralik parameter is an optional tuple (min, max) specifying the range of random values, with a
@@ -1482,6 +1537,15 @@ def rastgele_gercek(boyut: tuple, aralik: tuple = (0.0,1.0), dagilim = None) -> 
     return gergen(create_nested_list(boyut, aralik_list, False))
 
 
+def rastgele_xavier(boyut: tuple, dagilim: DistributionType = "normal") -> gergen:
+    return gergen(
+        create_nested_list_using_xavier(
+            boyut,
+            dagilim
+        )
+    )
+
+
 class Katman:
     _x: gergen = None
 
@@ -1499,7 +1563,7 @@ class Katman:
         """
         
         self._x = rastgele_gercek((input_size, 1))
-        self._W = rastgele_gercek((output_size, input_size), (-0.1, 0.1))
+        self._W = rastgele_xavier((output_size, input_size), 'uniform')
         self._b = rastgele_gercek((output_size, 1), (-0.1, 0.1))
         self._activation = activation
 
@@ -1598,6 +1662,8 @@ class MLP:
 
     _loss_operation: CrossEntropyLoss = None
 
+    _learning_rate: float = None
+
     def __init__(self, input_size: int, hidden_size: int, output_size: int):
         """
         The MLP is initialized with three parameters: input size, hidden size, and output size, which correspond to the dimensions of the input layer, hidden
@@ -1668,47 +1734,28 @@ def egit(
 
             target_expected_gergen = gergen(target_expected_list).boyutlandir((mlp._output_size, 1))
 
-            print("chp1", flush=True)
-
             mlp.ileri(sample)
-
-            print("chp2", flush=True)
 
             loss = mlp.calculate_loss(target_expected_gergen)
 
             loss.turev_al()
 
-            print("chp3", flush=True)
+            mlp.hidden_layer.get_weights().subtract_gradient(learning_rate)
+            mlp.hidden_layer.get_bias().subtract_gradient(learning_rate)
+            mlp.output_layer.get_weights().subtract_gradient(learning_rate)
+            mlp.output_layer.get_bias().subtract_gradient(learning_rate)
 
-            loss_wrt_W1 = mlp.hidden_layer.get_weights().get_turev()
-            loss_wrt_b1 = mlp.hidden_layer.get_bias().get_turev()
-            loss_wrt_W2 = mlp.output_layer.get_weights().get_turev()
-            loss_wrt_b2 = mlp.output_layer.get_bias().get_turev()
-
-            print("chp4", flush=True)
-
+            print("UPADTE")
             print(
-                loss_wrt_W1,
-                loss_wrt_b1,
-                loss_wrt_W2,
-                loss_wrt_b2,
+                "input", mlp.hidden_layer.get_input(),
+                "weights_1", mlp.hidden_layer.get_weights(),
+                "bias_1", mlp.hidden_layer.get_bias(),
+                "weights_2", mlp.output_layer.get_weights(),
+                "bias_2", mlp.output_layer.get_bias(),
+                "res", ForwardPass()(mlp.output_layer.get_input(), mlp.output_layer.get_weights(), mlp.output_layer.get_bias()),
+                "output", mlp.output_layer.get_output(),
                 flush=True
             )
-
-            updated_W1 = mlp.hidden_layer.get_weights() - learning_rate * loss_wrt_W1
-            updated_b1 = mlp.hidden_layer.get_bias() - learning_rate * loss_wrt_b1
-            updated_W2 = mlp.output_layer.get_weights() - learning_rate * loss_wrt_W2
-            updated_b2 = mlp.output_layer.get_bias() - learning_rate * loss_wrt_b2
-
-            mlp.hidden_layer.set_weights(updated_W1)
-            mlp.hidden_layer.set_bias(updated_b1)
-            mlp.output_layer.set_weights(updated_W2)
-            mlp.output_layer.set_bias(updated_b2)
-
-            mlp.hidden_layer.get_weights().reset_turev()
-            mlp.hidden_layer.get_bias().reset_turev()
-            mlp.output_layer.get_weights().reset_turev()
-            mlp.output_layer.get_bias().reset_turev()
 
 
 def load_data() -> tuple[list[int], list[int]]:
@@ -1768,7 +1815,7 @@ def main():
     raw_train_data, raw_test_data = load_data()
     train_labels, train_images = prepare_data(raw_train_data)
 
-    mlp = MLP(784, 12, 10)
+    mlp = MLP(784, 28, 10)
 
     egit(
         mlp,
